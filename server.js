@@ -2,8 +2,9 @@ import express from 'express';
 import cors from 'cors';
 import axios from 'axios';
 import { spawn } from 'child_process';
-import { readdir } from 'fs/promises';
+import { readdir, writeFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
+import path from 'path';
 import multer from 'multer';
 import os from 'os';
 
@@ -171,15 +172,33 @@ function startCameraStream(camera) {
 }
 
 async function captureFrame(camera) {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
+        const timestamp = new Date().toISOString().replace(/:/g, '-').replace(/\./g, '-');
+        const filename = `camera-${camera.id}-${timestamp}.jpg`;
+        const filepath = path.join('./tmp', filename);
+
+        // Ensure tmp directory exists
+        try {
+            await mkdir('./tmp', { recursive: true });
+        } catch (error) {
+            // Directory already exists or other error
+        }
+
         if (isWindows) {
             // On Windows, create a mock image for development
             const mockImageBuffer = Buffer.from([
                 0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01,
                 0x01, 0x01, 0x00, 0x48, 0x00, 0x48, 0x00, 0x00, 0xFF, 0xD9
             ]); // Minimal JPEG header
-            console.log(`Mock frame captured for camera ${camera.id}`);
-            setTimeout(() => resolve(mockImageBuffer), 100);
+
+            try {
+                await writeFile(filepath, mockImageBuffer);
+                console.log(`Mock frame captured and saved: ${filepath}`);
+                setTimeout(() => resolve(mockImageBuffer), 100);
+            } catch (error) {
+                console.error(`Error saving mock image: ${error}`);
+                reject(error);
+            }
             return;
         }
 
@@ -199,9 +218,16 @@ async function captureFrame(camera) {
             imageBuffer = Buffer.concat([imageBuffer, data]);
         });
 
-        ffmpeg.on('close', (code) => {
+        ffmpeg.on('close', async (code) => {
             if (code === 0) {
-                resolve(imageBuffer);
+                try {
+                    await writeFile(filepath, imageBuffer);
+                    console.log(`Frame captured and saved: ${filepath}`);
+                    resolve(imageBuffer);
+                } catch (error) {
+                    console.error(`Error saving image: ${error}`);
+                    reject(error);
+                }
             } else {
                 reject(new Error(`FFmpeg exited with code ${code}`));
             }
