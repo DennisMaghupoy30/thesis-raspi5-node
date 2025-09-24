@@ -8,15 +8,18 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "start": "concurrently \"node server.js\" \"vite\""
+    "start": "concurrently \"node ffmpeg-streams.js\" \"node server.js\" \"vite\"",
+    "ffmpeg": "node ffmpeg-streams.js",
+    "start-with-mjpeg": "concurrently \"node ffmpeg-streams.js\" \"node server.js\" \"vite\""
   },
   "dependencies": {
-    "react": "^19.1.1",
-    "react-dom": "^19.1.1",
-    "express": "^4.18.2",
-    "cors": "^2.8.5",
     "axios": "^1.6.0",
-    "multer": "^2.0.0"
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "multer": "^2.0.0",
+    "node-fetch": "^3.3.2",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.36.0",
