@@ -35,9 +35,9 @@ function App() {
   const fetchData = async () => {
     try {
       const [camerasRes, predictionsRes, statusRes] = await Promise.all([
-        fetch('http://localhost:3001/api/cameras'),
-        fetch('http://localhost:3001/api/predictions'),
-        fetch('http://localhost:3001/api/status')
+        fetch('http://localhost:9003/api/cameras'),
+        fetch('http://localhost:9003/api/predictions'),
+        fetch('http://localhost:9003/api/status')
       ]);
 
       if (camerasRes.ok) {

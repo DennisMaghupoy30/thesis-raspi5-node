@@ -67,7 +67,7 @@ async function checkAndInstallDependencies() {
 }
 
 const app = express();
-const PORT = 3001;
+const PORT = 9003;
 
 app.use(cors());
 app.use(express.json());
