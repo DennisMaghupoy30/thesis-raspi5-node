@@ -5,10 +5,66 @@ import { spawn } from 'child_process';
 import { readdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import multer from 'multer';
+import os from 'os';
 
 const API_MAIN = "https://vertiapp.xyz";
 const API_PREDICT_ENDPOINT = "/predict";
 const API_MODEL_LIST_ENDPOINT = "/list-models";
+
+const isWindows = os.platform() === 'win32';
+const isLinux = os.platform() === 'linux';
+
+async function checkAndInstallDependencies() {
+    if (!isLinux) return;
+
+    console.log('Checking system dependencies...');
+
+    // Check if ffmpeg exists
+    try {
+        await new Promise((resolve, reject) => {
+            const ffmpegCheck = spawn('which', ['ffmpeg']);
+            ffmpegCheck.on('close', (code) => {
+                if (code === 0) {
+                    console.log('FFmpeg is already installed');
+                    resolve();
+                } else {
+                    reject(new Error('FFmpeg not found'));
+                }
+            });
+        });
+    } catch (error) {
+        console.log('FFmpeg not found, installing dependencies...');
+
+        try {
+            // Update package list
+            console.log('Running apt update...');
+            await new Promise((resolve, reject) => {
+                const aptUpdate = spawn('sudo', ['apt', 'update'], { stdio: 'inherit' });
+                aptUpdate.on('close', (code) => {
+                    if (code === 0) resolve();
+                    else reject(new Error(`apt update failed with code ${code}`));
+                });
+            });
+
+            // Install required packages
+            console.log('Installing ffmpeg and v4l-utils...');
+            await new Promise((resolve, reject) => {
+                const aptInstall = spawn('sudo', ['apt', 'install', '-y', 'ffmpeg', 'v4l-utils'], { stdio: 'inherit' });
+                aptInstall.on('close', (code) => {
+                    if (code === 0) {
+                        console.log('Dependencies installed successfully');
+                        resolve();
+                    } else {
+                        reject(new Error(`apt install failed with code ${code}`));
+                    }
+                });
+            });
+        } catch (installError) {
+            console.error('Failed to install dependencies:', installError);
+            console.log('Please manually install: sudo apt update && sudo apt install -y ffmpeg v4l-utils');
+        }
+    }
+}
 
 const app = express();
 const PORT = 3001;
@@ -26,22 +82,40 @@ async function detectCameras() {
     const detectedCameras = [];
 
     try {
-        const videoDevices = await readdir('/dev');
-        const cameraDevices = videoDevices
-            .filter(device => device.startsWith('video'))
-            .map(device => `/dev/${device}`)
-            .filter(device => existsSync(device));
+        if (isLinux) {
+            // Linux/Raspberry Pi camera detection
+            const videoDevices = await readdir('/dev');
+            const cameraDevices = videoDevices
+                .filter(device => device.startsWith('video'))
+                .map(device => `/dev/${device}`)
+                .filter(device => existsSync(device));
 
-        for (let i = 0; i < cameraDevices.length; i++) {
-            detectedCameras.push({
-                id: i,
-                device: cameraDevices[i],
-                streamPort: 8081 + i,
-                streamUrl: `http://localhost:${8081 + i}/stream`
-            });
+            for (let i = 0; i < cameraDevices.length; i++) {
+                detectedCameras.push({
+                    id: i,
+                    device: cameraDevices[i],
+                    streamPort: 8081 + i,
+                    streamUrl: `http://localhost:${8081 + i}/stream`
+                });
+            }
+        } else if (isWindows) {
+            // Windows camera detection - simulate cameras for development
+            console.log('Windows detected - creating mock cameras for development');
+
+            // Create mock cameras for development/testing on Windows
+            for (let i = 0; i < 2; i++) {
+                detectedCameras.push({
+                    id: i,
+                    device: `video${i}`,
+                    streamPort: 8081 + i,
+                    streamUrl: `http://localhost:${8081 + i}/stream`
+                });
+            }
+        } else {
+            console.log('Unsupported OS - no cameras will be detected');
         }
 
-        console.log(`Detected ${detectedCameras.length} cameras:`, detectedCameras);
+        console.log(`Detected ${detectedCameras.length} cameras on ${os.platform()}:`, detectedCameras);
     } catch (error) {
         console.error('Error detecting cameras:', error);
     }
@@ -61,6 +135,13 @@ async function getModelList() {
 }
 
 function startCameraStream(camera) {
+    if (isWindows) {
+        // On Windows, create a mock stream server for development
+        console.log(`Mock camera ${camera.id} stream started on port ${camera.streamPort}`);
+        return null; // No actual ffmpeg process on Windows
+    }
+
+    // Linux/Raspberry Pi - real camera streaming
     const ffmpeg = spawn('ffmpeg', [
         '-f', 'v4l2',
         '-i', camera.device,
@@ -91,6 +172,18 @@ function startCameraStream(camera) {
 
 async function captureFrame(camera) {
     return new Promise((resolve, reject) => {
+        if (isWindows) {
+            // On Windows, create a mock image for development
+            const mockImageBuffer = Buffer.from([
+                0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01,
+                0x01, 0x01, 0x00, 0x48, 0x00, 0x48, 0x00, 0x00, 0xFF, 0xD9
+            ]); // Minimal JPEG header
+            console.log(`Mock frame captured for camera ${camera.id}`);
+            setTimeout(() => resolve(mockImageBuffer), 100);
+            return;
+        }
+
+        // Linux/Raspberry Pi - real camera capture
         const ffmpeg = spawn('ffmpeg', [
             '-f', 'v4l2',
             '-i', camera.device,
@@ -198,6 +291,9 @@ app.get('/api/status', (req, res) => {
 
 async function initialize() {
     console.log('Initializing camera detection system...');
+
+    // Check and install dependencies on Linux
+    await checkAndInstallDependencies();
 
     cameras = await detectCameras();
     currentModels = await getModelList();
